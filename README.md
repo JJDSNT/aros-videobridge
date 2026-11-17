@@ -31,6 +31,8 @@ AROS VideoBridge explores how to bring modern, source-agnostic video I/O to AROS
 
 - [Architecture and boundaries](docs/architecture.md)
 - [Source-code findings and evidence](docs/research.md)
+- [Streaming protocol support and priorities](docs/streaming-protocols.md)
+- [Video Toaster Program output options and decision rationale](docs/toaster-program-output.md)
 - [Incremental roadmap and acceptance criteria](docs/roadmap.md)
 
 ## Non-goals (initially)
