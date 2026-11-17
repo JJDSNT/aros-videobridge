@@ -12,7 +12,6 @@
                                                          +--> display sink
                                                          +--> encoder / file sink
                                                          +--> network publisher --> OBS
-                                                         +--> optional NDI publisher
 ```
 
 This is a **candidate** design, not an existing AROS implementation.
@@ -60,7 +59,7 @@ At 640x480 RGB24, a single frame is 921,600 bytes; eight frames consume about 7.
 
 1. **Network publication (initial candidate):** encode and publish a format/protocol that OBS can ingest. Choose the protocol only after validating the actual AROS FFmpeg/network stack and OBS ingest behavior.
 2. **OBS source plugin (later):** a plugin on the OBS host consumes an AROS frame transport. This may avoid on-device encoding, but requires a defined wire protocol and a maintained plugin.
-3. **NDI (investigation):** NT-Toaster uses a separately installed NDI runtime; assess platform support, licensing, footprint and target compatibility before promising NDI on AROS.
+3. **Open-protocol alternatives:** investigate interoperable RTP/RTCP, RIST, and other open transport implementations where supported by measured target capabilities. NDI is proprietary and is not an implementation candidate; its presence in NT-Toaster is retained only as upstream historical context.
 
 ### OBS as input
 
@@ -71,3 +70,7 @@ OBS output (e.g. a supported network feed) can become a source for a network dec
 Do not introduce a new library or public API until a prototype proves that the legacy VHI API cannot express the required operation adequately. Keep internal source/sink interfaces private during initial experiments. Avoid modifying the existing AROS TCP/IP stack unless a reproducible missing network primitive is demonstrated.
 
 See [research](research.md) for upstream evidence and [roadmap](roadmap.md) for validation.
+
+## Composable media pipeline
+
+The source/frame/sink sketch is a high-level view, not a requirement for monolithic adapters. Separate source acquisition, demuxing, decoding, pixel conversion, processing, encoding, muxing, transport, and output. Keep each optional and negotiate capabilities before connecting modules. Where source and destination formats permit, compressed packet passthrough should avoid decode/re-encode. A media editor or timeline system may orchestrate seeks and clip ranges but should not become part of the core. See [media-pipeline.md](media-pipeline.md).
