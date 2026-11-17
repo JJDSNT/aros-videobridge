@@ -29,7 +29,6 @@ A `udp://` URL alone does **not** imply that OBS understands arbitrary RGB frame
 | **P2** | **SRT + MPEG-TS** | Yes, if libsrt/FFmpeg enabled | Yes, if libsrt/FFmpeg enabled | Resilience to packet loss and jitter; useful beyond LAN. External libsrt availability and memory/CPU must be verified. |
 | **P2** | **RTMP / RTMPS** | Conditional | Yes, generally via a receiving RTMP server or appropriate OBS Media Source | Widely used distribution workflow; RTMPS adds TLS; not a direct replacement for simple peer-to-peer LAN capture. |
 | **P3** | **HTTP(S) media / HLS** | Yes, if appropriate demuxer/codec/TLS | Not a low-latency live sink by default | Valuable as remote source compatibility, but segment buffering and latency are poor fits for responsive switching. |
-| **P3 — optional** | **NDI** | Optional | Optional, through OBS plugin or compatible receiver | Native discovery and production workflows; investigate NDI SDK/runtime availability, redistribution/license, CPU and memory footprint. |
 | **P3 — optional** | **RIST + MPEG-TS** | Conditional | Conditional | OBS documents RIST as a supported resilient transport; requires verifying librist/FFmpeg availability on AROS. |
 | **P4 — research** | **WebRTC / WHIP / WHEP** | Conditional, complex | Conditional, complex | Interactive latency is attractive, but ICE/STUN/TURN, DTLS/SRTP, signaling, codec negotiation and target footprint make it unsuitable as the first AROS transport. WHIP is an ingest/publishing convention, not evidence of generic WebRTC input support in OBS Media Source. |
 | **Not initially** | **Generic raw UDP frames** | Custom only | Custom only | Without framing, sequencing, fragmentation, format negotiation and a receiver it is neither robust nor OBS-compatible. |
@@ -110,7 +109,7 @@ Do not place streaming protocols directly inside `vhi.library`. Keep VHI compati
 
 - Add RTSP camera ingestion once decoding and virtual VHI work.
 - Add SRT when libsrt availability and recovery requirements justify it.
-- Consider RTMP(S), HLS, NDI, RIST and WebRTC only for demonstrated use cases and measured budgets.
+- Consider RTMP(S), HLS, RIST and WebRTC only for demonstrated use cases and measured budgets. NDI is excluded from proposed implementation because it is proprietary.
 
 ## 7. Evidence and verification limits
 
@@ -134,6 +133,6 @@ Do not place streaming protocols directly inside `vhi.library`. Keep VHI compati
 
 ## 8. Decision summary
 
-**Initial support target:** unicast **UDP/MPEG-TS** as the first standard OBS interoperability experiment; **raw framed TCP to a host bridge** as a parallel, low-encoding-cost feasibility option; **RTSP input** as the first camera-network use case. **SRT** follows after a verified libsrt/FFmpeg target build. The remaining protocols are optional and demand-driven.
+**Initial support target:** unicast **UDP/MPEG-TS** as the first standard OBS interoperability experiment; **raw framed TCP to a host bridge** as a parallel, low-encoding-cost feasibility option; **RTSP input** as the first camera-network use case. **SRT** follows after a verified libsrt/FFmpeg target build. The remaining open-protocol candidates are optional and demand-driven. NDI may be mentioned as a factual feature of upstream NT-Toaster but is not a VideoBridge implementation target.
 
 No public AROS/VHI API changes should be proposed until these gates produce reproducible evidence.
