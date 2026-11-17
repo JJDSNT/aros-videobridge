@@ -2,7 +2,9 @@
 
 **Research and architecture project — no implementation is claimed yet.**
 
-AROS VideoBridge explores how to bring modern, source-agnostic video I/O to AROS, drawing lessons from the Copperline Video Toaster fork, NT-Toaster, and its OBS integration. The goal is to make live cameras, media files, network streams, and external applications such as OBS interoperable with AROS video consumers, including a future Video Toaster workflow.
+AROS VideoBridge explores a modular, reusable audiovisual input/output infrastructure for AROS. It aims to connect cameras, media files, network streams, processing applications, and output destinations without coupling applications to specific codecs or transports.
+
+**Concrete motivating examples:** an AROS **Video Toaster** could receive camera, file, and network sources and publish its clean Program output; **OBS Studio** could receive an AROS-produced stream through a compatible network format or a host-side adapter. These are motivating integration scenarios, not implemented features. The architecture should also support other AROS multimedia applications.
 
 ## Design intent
 
@@ -13,6 +15,12 @@ AROS VideoBridge explores how to bring modern, source-agnostic video I/O to AROS
 - Support low-memory m68k configurations: optional components, bounded queues, controlled allocations, explicit ownership, and measured copies.
 - Avoid coupling the architecture to the NewTek application or to OBS internals. OBS interoperability can initially use standard network or capture interfaces.
 - Credit the original projects and distinguish demonstrated capabilities from proposed ones.
+
+## Reusable media pipeline
+
+The intended architecture separates **source adapters**, **demuxers/decoders**, **format conversion and processing**, **encoders/muxers**, **transports**, and **sinks**. A pipeline should bypass unnecessary decoding or re-encoding when a compatible compressed stream can be passed through. Formats, timestamps, buffer ownership, capability negotiation, and backpressure belong to the minimal shared contracts; heavyweight codecs and protocols remain optional.
+
+See [Media pipeline design](docs/media-pipeline.md) for the proposed boundaries, low-memory constraints, and integration scenarios. An OpenTimelineIO-style editing timeline is a potential *client* of media access, not a VideoBridge core responsibility. Display management and desktop extension remain outside this project's scope.
 
 ## Reference implementations
 
@@ -30,6 +38,7 @@ AROS VideoBridge explores how to bring modern, source-agnostic video I/O to AROS
 ## Documentation
 
 - [Architecture and boundaries](docs/architecture.md)
+- [Composable media pipeline](docs/media-pipeline.md)
 - [Source-code findings and evidence](docs/research.md)
 - [Streaming protocol support and priorities](docs/streaming-protocols.md)
 - [Video Toaster Program output options and decision rationale](docs/toaster-program-output.md)
