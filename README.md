@@ -1,0 +1,49 @@
+# AROS VideoBridge
+
+**Research and architecture project — no implementation is claimed yet.**
+
+AROS VideoBridge explores how to bring modern, source-agnostic video I/O to AROS, drawing lessons from the Copperline Video Toaster fork, NT-Toaster, and its OBS integration. The goal is to make live cameras, media files, network streams, and external applications such as OBS interoperable with AROS video consumers, including a future Video Toaster workflow.
+
+## Design intent
+
+- Preserve the existing VHI driver/API contract and its value for native camera capture.
+- Treat VHI as one capture interface, **not** as an encoder, streaming server, or mandatory output API.
+- Introduce independently deployable source, frame-transport, and sink adapters where justified by evidence.
+- Keep decoding, encoding, network transport, and device-specific code outside the minimal shared frame contract.
+- Support low-memory m68k configurations: optional components, bounded queues, controlled allocations, explicit ownership, and measured copies.
+- Avoid coupling the architecture to the NewTek application or to OBS internals. OBS interoperability can initially use standard network or capture interfaces.
+- Credit the original projects and distinguish demonstrated capabilities from proposed ones.
+
+## Reference implementations
+
+| Project | Relevant lessons |
+| --- | --- |
+| [AROS VHI API](https://github.com/aros-development-team/AROS/blob/master/compiler/include/vhi/vhi.h) | Existing method-based capture contract, image types, and custom allocation hooks |
+| [AROS UVC capture interface](https://github.com/aros-development-team/AROS/blob/master/compiler/include/devices/uvc_capture.h) | Device discovery, negotiated modes, frame intervals, RGB24 capture |
+| [AROS cAMIra](https://github.com/aros-development-team/contrib/tree/master/MultiMedia/camira) | AROS-native VHI client with a separate process and Exec message ports |
+| [AROS FFmpeg port patch](https://github.com/aros-development-team/contrib/blob/master/MultiMedia/libs/ffmpeg/ffmpeg-8.1.2-aros.diff) | Evidence of an FFmpeg 8.1.2 adaptation, **not** proof that every protocol or codec is usable |
+| [Video-Toaster-Copperline](https://github.com/jfoust2/Video-Toaster-Copperline) | Hardware-accurate Toaster emulation and historical video-path research |
+| [NT-Toaster](https://github.com/jfoust2/NT-Toaster) | FFmpeg-backed file/camera/network inputs, output encoding, NDI integration |
+| [obs-nt-toaster](https://github.com/jfoust2/obs-nt-toaster) | OBS-source adapter around a decoupled Toaster engine; early implementation, not fully functionally tested |
+| [Open Video Toaster](https://www.discreetfx.com/openvideotoaster.html) | Original NewTek application/source distribution; not the subject of this infrastructure project |
+
+## Documentation
+
+- [Architecture and boundaries](docs/architecture.md)
+- [Source-code findings and evidence](docs/research.md)
+- [Incremental roadmap and acceptance criteria](docs/roadmap.md)
+
+## Non-goals (initially)
+
+- Reimplementing the NewTek Switcher or Flyer hardware model.
+- Replacing existing VHI clients or breaking the VHI ABI.
+- Embedding OBS or a complete FFmpeg stack inside vhi.library.
+- Assuming all AROS targets have hardware acceleration, abundant RAM, or working codecs.
+
+## Status
+
+Architecture and research only. All implementation choices remain subject to code inspection, target-specific builds, and reproducible tests.
+
+## Attribution
+
+AROS and its contributors own the AROS code and interfaces; Copperline and NT-Toaster authors own their respective implementations; NewTek created the original Video Toaster and Flyer, whose software and materials are distributed through Open Video Toaster/DiscreetFX. This project documents interoperability ideas, not ownership of those works. Consult each upstream license before copying or adapting code.
