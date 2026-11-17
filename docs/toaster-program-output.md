@@ -52,7 +52,7 @@ synthetic -------+                                   v
                     local display                encoder / mux             host bridge
                     (AROS RTG)                  (file / stream)           (OBS / FFmpeg)
                                                                                |
-                                                                          optional NDI
+                                                                      optional open-protocol adapter
 ```
 
 Candidate internal concepts:
@@ -102,13 +102,9 @@ Program -> explicit host transport -> OBS source plugin -> OBS encoder/output
 
 Pros: OBS handles publication, possible low latency and integration with scenes. Cons: plugin development/maintenance and OBS API compatibility; host transport still needed. NT-Toaster's plugin is an architectural precedent, not reusable without adaptation.
 
-### Path 4 — NDI publisher
+### Path 4 — additional open-protocol publishers
 
-```text
-Program -> NDI adapter -> NDI-aware receiver / OBS plugin
-```
-
-Pros: production-oriented discovery and interoperability. Cons: NDI runtime, license/redistribution and platform support, CPU/RAM and network bandwidth. Treat as optional and do not assume an NDI SDK/runtime works on AROS m68k.
+Optional RTP/RTCP or RIST-based adapters may be investigated after a working minimal output path is demonstrated. NDI is proprietary and excluded as an implementation target, although the upstream NT-Toaster implementation remains relevant as an architectural reference.
 
 **Crucial distinction:** a standard network **protocol** is not itself a frame output abstraction. Define the clean Program frame boundary before committing to UDP, SRT, RTMP or NDI.
 
