@@ -2,7 +2,7 @@
 
 > **Current phase: architectural design, not implementation or proof of concept.** This roadmap supersedes the earlier VHI/UVC-first experimental gates. No code, AROS ABI, task model, transport protocol or prototype is authorized by this document.
 
-## North star: heterogeneous input, application-owned processing, independent output
+## North star: heterogeneous input, application-owned processing, simultaneous independent outputs
 
 The [reference scenario](reference-scenario-video-toaster-obs.md) is:
 
@@ -11,12 +11,13 @@ Network stream -- [network adapter] --+
                                        |
 Local file ----- [file adapter] -------+--> AROS Video Toaster --> Program
                                        |                           |
-Capture device - [capture adapter] ----+                  [output adapter]
-                                                                   |
-                                                               OBS Studio
+Capture device - [capture adapter] ----+                +----------+----------+
+                                                        [streaming adapter]  [file writer/muxer]
+                                                                 |                   |
+                                                             OBS Studio          Recorded file
 ```
 
-Optional decoding, conversion, encoding, packetization and other processing are **explicit replaceable nodes**, never mandatory functions of the core. The Video Toaster owns switching and composition. OBS is a reference consumer, not a core dependency. Audio tracks are included in the model even when a particular scenario uses video only.
+Optional decoding, conversion, encoding, packetization and other processing are **explicit replaceable nodes**, never mandatory functions of the core. The Video Toaster owns switching and composition. OBS streaming and file recording are **simultaneous required destinations in this reference scenario**, not core dependencies. Audio tracks are included in the model even when a particular scenario uses video only.
 
 A proposed architecture is inadequate if it can express this scenario only by embedding network/file/capture-specific behavior in the Video Toaster or by mandating a central server.
 
@@ -48,15 +49,15 @@ Reference: [connection model](connection-model.md).
 
 ## Decision C — Application-facing input/output contracts
 
-**Question:** How can the Toaster receive three unrelated inputs and publish Program without knowing their adapters?
+**Question:** How can the Toaster receive three unrelated inputs and publish Program to OBS and a recorded file without knowing their adapters?
 
 - Describe how applications expose accepted input ports and offered output ports.
 - Keep application-specific behavior (switching, effects, composition, editing, recording policy) outside VideoBridge.
 - Treat a Program output as publishable media independent of its downstream consumer.
-- Define how one Program can serve OBS, local preview and recording, with independent destination policies.
+- Define how one Program simultaneously serves OBS streaming and file recording, with independent destination policies; local preview is an optional third output.
 - Clarify the relationship among source identity, stream continuity and application-owned Program identity.
 
-**Exit:** an application contract and diagrams for the three-input/OBS scenario and its multi-output extension.
+**Exit:** an application contract and diagrams for the three-input/two-output (OBS plus recorded file) reference scenario.
 
 ## Decision D — Media timing, continuity and change
 
@@ -88,8 +89,8 @@ Reference: [connection model](connection-model.md).
 | Capture → preview | Local direct connection, no network or codec dependency |
 | Encoded camera → recorder | Compatible encoded passthrough |
 | Encoded source → raw-only sink | Explicit incompatibility or optional decoder |
-| Stream + file + capture → Video Toaster → OBS | Heterogeneous inputs and independent Program publication |
-| Program → OBS + preview + recorder | Fan-out with independent destination expectations |
+| Stream + file + capture → Video Toaster → OBS + recorded file | Heterogeneous inputs and simultaneous independent Program outputs |
+| Program → OBS + recorded file (+ optional preview) | Fan-out with independent destination expectations |
 | Audio + video tracks | Declared timing relationships, no mandatory mixer/sync engine |
 | Source reconnects or changes format | Identity and continuity semantics remain clear |
 
@@ -108,7 +109,7 @@ Reference: [connection model](connection-model.md).
 
 - [Architecture](architecture.md): mission, responsibilities and invariants.
 - [Connection model](connection-model.md): compatibility and composition semantics.
-- [Video Toaster → OBS reference scenario](reference-scenario-video-toaster-obs.md): end-to-end architectural example.
+- [Video Toaster → OBS and file reference scenario](reference-scenario-video-toaster-obs.md): end-to-end architectural example.
 - [Media pipeline research](media-pipeline.md): codecs, demux, formats, buffers and platform considerations.
 - [Streaming protocols](streaming-protocols.md): candidate network adapters, not a mandatory protocol choice.
 - [Research references](research.md): upstream evidence and provenance.
