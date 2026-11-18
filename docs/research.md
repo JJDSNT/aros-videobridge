@@ -36,6 +36,57 @@ These are distinct layers and must not be conflated.
 - Treat publishing and ingest as separate directions.
 - Keep frame-rate conversion and field/frame timing explicit; Toaster's 59.94 field cadence must not be assumed to be a universal VHI requirement.
 
+## Architectural references: media routing and generic I/O
+
+These projects are **architectural references**, not dependencies, porting commitments, or evidence that their implementations run on AROS. The VideoBridge scope remains **a reusable, lightweight audiovisual input/output infrastructure**; effects, compositing, timeline editing, and application-specific rendering belong to consumers built above it.
+
+### MediaMTX — stream publication and distribution
+
+- Repository: https://github.com/bluenviron/mediamtx
+- Implementation points: [path lifecycle](https://github.com/bluenviron/mediamtx/blob/main/internal/core/path.go), [stream routing](https://github.com/bluenviron/mediamtx/blob/main/internal/stream/stream.go), [reader queues](https://github.com/bluenviron/mediamtx/blob/main/internal/stream/reader.go).
+- **Observed:** a path associates a publisher/source, stream and readers. Readers register callbacks for media formats and have bounded ring buffers; a full reader queue results in dropped outbound units rather than unlimited buffering. MediaMTX routes media across supported network protocols without generally requiring video decoding.
+- **Relevant idea:** named streams, independent publisher/subscriber lifecycles, one-to-many delivery, per-subscriber isolation and explicit backpressure.
+- **Do not import:** the Go runtime, complete network-server stack, authentication/control/metrics subsystems, or an assumption that all inputs are network streams.
+- **OBS interoperability, documented upstream:** [OBS publishing via RTMP or WHIP](https://github.com/bluenviron/mediamtx/blob/main/docs/3-publish/19-obs-studio.md); [OBS reading via RTSP Media Source](https://github.com/bluenviron/mediamtx/blob/main/docs/4-read/11-obs-studio.md). These demonstrate MediaMTX/OBS compatibility, **not** an AROS VideoBridge publisher.
+
+### GPAC — generic I/O contracts and packet exchange
+
+- Repository: https://github.com/gpac/gpac
+- Reference: https://wiki.gpac.io/Filters/filters_general/
+- **Upstream design:** a filter-based media framework whose components expose input/output capabilities, connect media endpoints, and exchange timestamped packets. Sources, sinks and optional transformations can share a common connection model.
+- **Relevant idea:** capability negotiation, packet ownership/lifetime, format changes, and separation of raw-frame delivery from compressed-packet passthrough.
+- **Do not import:** a general-purpose processing graph, full multimedia runtime, built-in effects or an assumption that GPAC's scheduler and memory model fit low-memory m68k. A VideoBridge input/output contract can remain much smaller than a generic filter graph.
+
+### libobs — application-facing source/output boundaries
+
+- Repository: https://github.com/obsproject/obs-studio (libobs)
+- **Relevant idea:** distinguish sources, outputs and optional encoders; expose encoded and uncompressed media paths without making the I/O layer itself an effects engine.
+- **Boundary:** OBS rendering, scene composition, GPU and desktop dependencies are outside VideoBridge. An OBS host adapter and an open-protocol network publisher are different integration choices.
+
+### LIVE555 — focused RTP/RTSP transport
+
+- Repository: https://github.com/rgaufman/live555
+- Official project: http://www.live555.com/liveMedia/
+- **Relevant idea:** separate RTP/RTSP sessions, transport packetization and media-source abstractions. Useful when evaluating an optional RTSP/RTP adapter.
+- **Boundary:** not a replacement for a generic local-device/file/application I/O core; assess license, target portability, runtime and memory before considering any code reuse.
+
+### PipeWire — local-device and inter-application media routing
+
+- Repository: https://github.com/PipeWire/pipewire
+- **Relevant idea:** connecting device and application endpoints, media format negotiation, and coordinating buffers between independent participants.
+- **Boundary:** its Linux-centric process integration and supporting infrastructure should not become prerequisites for an AROS implementation.
+
+### VideoBridge design implications (proposals, not settled ABI)
+
+1. Keep a **small transport-agnostic core** for stream identity, endpoint registration, subscriptions, media format descriptors, lifecycle and bounded delivery.
+2. Support **raw frames and encoded packets** explicitly. Preserve packet passthrough when source and sink capabilities permit; do not imply universal transcoding or zero-copy.
+3. Make capture (VHI/UVC), file I/O, network protocols, host/OBS interoperability and codecs **optional adapters**. AROS Exec MsgPorts/tasks may carry control and notifications; payload ownership, copying and task affinity need separate contracts.
+4. Bound memory in **bytes**, not only item counts; define slow-reader policies, buffer ownership, cancellation, timestamp/clock domains and discontinuities. Prefer measured m68k budgets over desktop assumptions.
+5. Permit an FX application to subscribe to a stream and publish its processed result as a **new stream**; processing remains outside the VideoBridge core.
+6. Keep MediaMTX as the leading **scope/routing reference**, GPAC as a **generic I/O contract reference**, and libobs/LIVE555/PipeWire as narrower complementary references. This ranking is an architectural assessment, not a benchmark.
+
+**Open validation:** inspect upstream buffer/refcount and scheduling behavior in depth; measure AROS m68k frame/packet memory, copy counts and throughput; prove an actual AROS publisher-to-MediaMTX-to-OBS path; and check protocol/codec availability per target before selecting a first adapter.
+
 ## Open questions requiring code and runtime evidence
 
 1. Which actual VHI driver in AROS consumes UVC methods, and how are its buffers owned and released?
