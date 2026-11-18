@@ -1,146 +1,115 @@
-# Architecture: sources, frames, consumers, sinks
+# VideoBridge — architecture direction
 
-## Central distinction
+> **Status:** conceptual architecture for design guidance, not an implementation specification, public ABI, or proof-of-concept plan. This document supersedes earlier device-first and network-first architectural sketches in this repository. Research on VHI, UVC, OBS and Exec remains valuable as adapter evidence, not as a constraint on the core design.
 
-**Capture** and **publication** are separate concerns. The existing AROS VHI contract primarily describes a capture device and digitized image. OBS interoperability can be achieved either by publishing a stream consumed by OBS or by implementing a host-side OBS source plugin; neither requires OBS to be embedded in AROS.
+## Mission and boundaries
+
+AROS VideoBridge is **generic audiovisual input/output infrastructure** for AROS. It lets applications, capture devices, files, network transports, and optional media-processing components exchange media through common contracts. The bridge is not a video editor, Video Toaster implementation, effects engine, compositor, codec suite, mandatory network server, or global multimedia daemon.
+
+The **AROS Video Toaster** is a potential consumer and producer of VideoBridge media. Cine Toaster is a separate project. The architecture must support audio and video from the outset at the *model* level, without requiring audio processing, encoding, or synchronized rendering inside the core.
+
+## Architectural responsibilities
 
 ```text
-  UVC / VHI driver ----+
-  network decoder -----+--> source adapters --> bounded frame exchange --> video consumers
-  file decoder --------+                                 |                 (Toaster, preview, etc.)
-  synthetic source ----+                                 |
-                                                         +--> display sink
-                                                         +--> encoder / file sink
-                                                         +--> network publisher --> OBS
+Applications      Capture devices      Files      Network      Optional processors
+      \                 |                |           |                 /
+                  Adapter / Media Node boundary
+                               |
+                   Media Graph (nodes/ports/links)
+                               |
+        +----------------------+----------------------+
+        |                      |                      |
+    Media Model           Media Exchange         Media Control
+  sessions, tracks,     delivery semantics,     configuration,
+  representations,      buffering contracts,   capabilities,
+  clocks and timing     flow expectations       connection lifecycle
+        +----------------------+----------------------+
+                               |
+                  AROS platform integration
+                 (implementation-dependent)
 ```
 
-This is a **candidate** design, not an existing AROS implementation.
+These are **responsibilities**, not mandatory modules, tasks, processes, libraries, or execution stages. In particular, a graph describes connections; it does not imply a central scheduler.
 
-## Preserve the VHI contract
+### Media Graph
 
-AROS `compiler/include/vhi/vhi.h` defines `VHI_METHOD_OPEN/CLOSE/SET/GET/PERFORM`, `VHI_DIGITIZE_PICTURE`, and `struct vhi_image` with RGB24, YUV and JPEG representations. `struct vhi_digitize` supports caller-provided allocation/free callbacks. The public `vhi_api` entry point is specified in `workbench/libs/vhi/vhi.conf`.
+- **Node:** component that produces, consumes, or optionally transforms media.
+- **Port:** typed interface of a node, with direction and capabilities.
+- **Link:** a connection between ports with negotiated media semantics. A link is not synonymous with a socket, a transport, or a stream.
+- **Graph context:** a scope for topology, visibility and coordination; whether and how contexts cross application boundaries is an implementation decision.
+- Support fan-out, fan-in where an explicit component defines mixing/switching semantics, and independently configured outputs. The core does **not** perform implicit mixing, compositing, resampling or transcoding.
 
-The legacy `vhi_image` has no explicit presentation timestamp, duration, sequence number, audio stream, or discontinuity indicator. Do **not** change its layout in place. A virtual VHI source can initially implement the existing pull-style digitize operation over a buffered decoded stream. A separate optional frame envelope may carry metadata for clients that opt in.
+### Media Model
 
-`VHI_DC_TYPE_TCPIP` is a historical camera classification, not evidence of a working generic network-stream implementation.
+- **Session:** presentation or coordination grouping, where applicable.
+- **Track:** independently represented and timed audio, video, or other media component.
+- **Stream:** continuity and identity of published media; may contain one or more tracks. Neither a stream nor a track is a physical connection.
+- **Media unit:** a raw frame/sample block or encoded access unit/packet with representation and timing metadata. Packetization, codec access units and decoded frames are distinct.
+- **Capabilities:** describe accepted and offered representations, including codec/configuration or raw layout, timing and relevant metadata. Negotiation occurs at connection boundaries; conversions are explicit optional nodes.
+- **Time:** timestamps belong to declared clock domains; relationships between tracks can be expressed without requiring a universal clock or synchronization engine.
 
-## UVC is a lower-layer capture implementation
+### Media Exchange
 
-`rom/usb/classes/video/uvc.class.c` and `compiler/include/devices/uvc_capture.h` expose USB video capture and mode negotiation, including YUY2, MJPEG and grayscale descriptors. The documented `UVCM_GRAB` interface supplies RGB24 buffers and returns bytes or zero on failure. The header also declares optional VHI UVC GET/SET extensions for mode, device information and frame interval.
+Defines what it means to offer, accept and deliver media regardless of location. It does **not** prescribe pointer passing, Exec messages, sockets, copying, zero-copy, a central buffer pool or an always-on service. Different adapters may realize the same logical link differently.
 
-Investigate the actual UVC-to-VHI driver and buffer ownership before assuming zero-copy or asynchronous capture. Do not confuse USB's internal streaming with an application-level push API.
+- Ownership and lifetime must be explicit at the *contract* level; allocation strategies are not frozen here.
+- Delivery has bounded-resource expectations and explicit policy choices (e.g. low-latency preview vs recording fidelity), rather than one global drop strategy.
+- Compatible compressed media may pass through without decoding or re-encoding.
+- A link may connect local components, components in different execution contexts, or remote peers; crossing a boundary must not silently change the meaning of the media.
 
-## Candidate frame envelope (not an ABI proposal)
+### Media Control
 
-A versioned, size-tagged metadata record could contain:
+Defines discovery-independent creation, configuration, negotiation, connection, disconnection, status and reconfiguration. Discovery may supply candidate nodes, but static wiring and application-owned graphs must work without it. Policy and mechanism remain separate: applications select priorities, reconnection behavior, permissible conversion, and latency/fidelity trade-offs.
 
-- source identifier and generation
-- pixel format, width/height, stride/plane layout
-- monotonic presentation timestamp and optional duration
-- frame sequence and discontinuity flags
-- buffer ownership/release mechanism and explicit capacity
+## Architectural invariants
 
-Keep audio on a separately synchronized path until a proven use case requires a shared AV envelope. Specify clock conversion, wraparound, lifetime, and cancellation before stabilizing any ABI.
+1. **No privileged adapter:** VHI, AHI, files, network and application interfaces are peers at the boundary; none defines the core media model.
+2. **No mandatory server or scheduler:** local-only use is first-class.
+3. **No implicit transforms:** a compatible representation is connected directly; otherwise negotiation fails or an explicitly selected processor participates.
+4. **No forced decode:** encoded packet passthrough is valid when metadata and format constraints permit.
+5. **Audio and video are modeled as tracks**, including independent clock domains; synchronization policy is not hardcoded.
+6. **No unbounded exchange contract:** resource limits and backpressure semantics are observable and configurable.
+7. **Control and data are distinct:** neither is tied to a particular AROS primitive.
+8. **Core footprint is proportional to use:** codecs, transport protocols, discovery and complex processing are optional.
+9. **Applications retain domain semantics:** editing timelines, switching, scenes, effects and recording policy are not imposed by the bridge.
+10. **AROS-native, portable architecture:** respect legacy m68k constraints without encoding one CPU, driver or memory model into the public concepts.
 
-## Concurrency and memory
+## Architectural walkthroughs (thought experiments, not tests)
 
-- Source workers perform potentially blocking device, file, or network I/O.
-- Consumers never hold source locks while encoding or sending over the network.
-- Bounded queues with an explicit drop policy prevent unbounded latency and memory growth.
-- Disconnection, timeout, end-of-stream, format change, and shutdown must be first-class states.
-- Use Exec tasks/MsgPorts where appropriate; evaluate ownership and task affinity before passing frame pointers.
-- Preserve low-memory m68k operation with configurable queue depth and optional transports/codecs.
+| Scenario | Required model property |
+| --- | --- |
+| Camera to local preview | Source and sink connect without network, daemon or mandatory codec |
+| File to network output | Optional demux/packetization adapters; no mandatory raw-frame stage |
+| One source to preview and recorder | Fan-out with independent delivery/latency policies |
+| Video Toaster switching inputs | Toaster owns switching logic; bridge supplies independent input and Program-output ports |
+| Audio + video publication | Multiple tracks and explicit clock relationships without mandatory synchronization engine |
+| Application processing then republishing | Processing is an explicit node with input/output ports |
+| Remote source into local application | Network is a source adapter, not a separate kind of graph |
+| Incompatible formats | Negotiation reports incompatibility or requires an explicit optional converter |
 
-At 640x480 RGB24, a single frame is 921,600 bytes; eight frames consume about 7.0 MiB before decoder and network buffers. Measure actual target memory, throughput and copies rather than assuming desktop-class resources.
+## Reference comparison
 
-## Interoperability options
-
-### OBS as output
-
-1. **Network publication (initial candidate):** encode and publish a format/protocol that OBS can ingest. Choose the protocol only after validating the actual AROS FFmpeg/network stack and OBS ingest behavior.
-2. **OBS source plugin (later):** a plugin on the OBS host consumes an AROS frame transport. This may avoid on-device encoding, but requires a defined wire protocol and a maintained plugin.
-3. **Open-protocol alternatives:** investigate interoperable RTP/RTCP, RIST, and other open transport implementations where supported by measured target capabilities. NDI is proprietary and is not an implementation candidate; its presence in NT-Toaster is retained only as upstream historical context.
-
-### OBS as input
-
-OBS output (e.g. a supported network feed) can become a source for a network decoder/virtual VHI adapter. This is a separate direction from publishing AROS Program output to OBS.
-
-## Architectural decision gates
-
-Do not introduce a new library or public API until a prototype proves that the legacy VHI API cannot express the required operation adequately. Keep internal source/sink interfaces private during initial experiments. Avoid modifying the existing AROS TCP/IP stack unless a reproducible missing network primitive is demonstrated.
-
-See [research](research.md) for upstream evidence and [roadmap](roadmap.md) for validation.
-
-## Composable media pipeline
-
-The source/frame/sink sketch is a high-level view, not a requirement for monolithic adapters. Separate source acquisition, demuxing, decoding, pixel conversion, processing, encoding, muxing, transport, and output. Keep each optional and negotiate capabilities before connecting modules. Where source and destination formats permit, compressed packet passthrough should avoid decode/re-encode. A media editor or timeline system may orchestrate seeks and clip ranges but should not become part of the core. See [media-pipeline.md](media-pipeline.md).
-
-## Architecture review against reference projects (November 2026)
-
-**Status: candidate logical architecture; not an ABI, daemon, build plan or runtime validation.** This review corrects an earlier device-first / proof-of-concept emphasis. The goal at this stage is to design a generic AROS audiovisual I/O architecture. Network, files, applications, VHI and AHI are interchangeable adapter domains, not architectural centers.
-
-### Reference comparison
-
-| Reference | Architectural lesson | Gap in the previous Endpoint / Stream Fabric / AROS Services model |
+| Reference | Adopt conceptually | Deliberately do not inherit |
 | --- | --- | --- |
-| [MediaMTX](https://github.com/bluenviron/mediamtx) | Published streams, multiple readers, media tracks, protocol adapters and bounded distribution | Stream naming, tracks and publication lifecycle were underspecified; do not turn the network server into a mandatory core |
-| [GPAC](https://github.com/gpac/gpac) | Filters with input/output connections, packet metadata, capability matching, composable transforms | Connections, packet-versus-frame semantics and optional transform nodes were missing |
-| [libobs](https://github.com/obsproject/obs-studio) | Separation of sources, outputs and encoders; asynchronous media and timestamps | Bidirectional application integration and async delivery contracts were unclear; composition/scenes remain outside scope |
-| [LIVE555](https://www.live555.com/liveMedia/) | Session/subsession, transport-specific timing and lifecycle | Presentation/session and track semantics were not modeled explicitly; avoid coupling the core to RTP/RTSP |
-| [PipeWire](https://github.com/PipeWire/pipewire) | Nodes, ports, links, capabilities and buffer exchange | Endpoint conflated an entity with its connections; shared-buffer negotiation and graph topology were underspecified |
+| [GPAC](https://github.com/gpac/gpac) | Composable filters, typed links, media representation boundaries | Full scheduler, extensive processing framework |
+| [PipeWire](https://github.com/PipeWire/pipewire) | Node/port/link vocabulary, capability negotiation | Linux daemon and platform-specific machinery |
+| [libobs](https://github.com/obsproject/obs-studio) | Sources, outputs, optional processing, asynchronous media | Scenes, rendering/compositing engine |
+| [MediaMTX](https://github.com/bluenviron/mediamtx) | Publication, multi-reader distribution, track awareness | Server-centric topology and protocol-first architecture |
+| [LIVE555](https://www.live555.com/liveMedia/) | Session and transport-specific timing distinctions | RTP/RTSP as universal media contracts |
 
-This is an architectural comparison, not a claim that the reference implementations can be embedded in AROS or share compatible licenses.
+These are architectural references, not dependency or code-reuse decisions. Evaluate attribution and licenses before incorporating implementation code.
 
-### Revised logical architecture
+## Questions to resolve architecturally (before freezing APIs)
 
-```text
- Network adapters       Application adapters       File / device adapters
-          \                    |                       /
-                Media Nodes and typed I/O Ports
-                              |
-                  Media Graph / Stream Fabric
-              Links, routing, publication, subscription
-                         /           \
-               Media Model          Buffer Model
-         sessions/tracks/formats   ownership/queues/flow
-                 clocks/timing     lifetime/copy boundaries
-                         \           /
-                    Control and Lifecycle
-           discovery hooks, negotiation, state, recovery
-                              |
-                    AROS Platform Integration
-            Exec tasks/ports/memory; AROSTCP as adapter
-```
+- **Graph visibility:** what makes a node or stream discoverable outside its owning context, and who authorizes a connection?
+- **Negotiation semantics:** how do formats, capabilities, clock relationships and optional transforms compose across a path?
+- **Stream identity:** when do format changes, discontinuities or reconnections preserve versus replace a stream/track?
+- **Fan-out semantics:** how are slow consumers isolated without imposing a global delivery policy?
+- **Control model:** how do local and remote control surfaces express equivalent graph operations without conflating discovery, control and transport?
+- **Extension boundaries:** which capabilities are intrinsic to the minimal bridge, and which belong in replaceable adapters?
 
-These are **logical responsibilities**, not necessarily separate libraries, processes, threads, services or allocation domains. The graph is a *connectivity model*, not an obligatory GPAC-like processing scheduler. Local links must not be forced through a network server.
+## Implementation freedom reserved for the agent
 
-### Conceptual contracts (names provisional)
+The agent should later investigate the appropriate use of Exec libraries, devices, resources, tasks, MsgPorts, memory mechanisms, AHI/VHI and AROSTCP. **Do not infer a mandatory resident service, resource registry, shared-memory strategy, specific cancellation state machine, or public ABI from this document.** Those are engineering choices to be justified against the architecture and target constraints, not architectural premises.
 
-- **MediaNode:** a source, sink or optional transformer; a transformer is a node with both input and output ports. The core routes media but does not implement effects, compositing, codecs or editing.
-- **MediaPort:** a typed input/output interface with capabilities, accepted media representations and lifecycle.
-- **MediaLink:** a negotiated connection between compatible ports, distinct from the stream being carried. Support fan-out and independent consumer policies.
-- **MediaStream:** publishable identity and continuity of media; not synonymous with a socket or link.
-- **MediaSession / MediaTrack:** presentation-level grouping and independently timed video/audio/other tracks; define synchronization relationships without assuming all tracks share one clock.
-- **MediaUnit:** either an encoded packet or a raw frame, with explicit representation, timestamp domain, duration, sequence/discontinuity and format/configuration changes. Do not silently treat RTP packets, codec access units and decoded frames as interchangeable.
-- **MediaBuffer:** payload storage, immutable while shared, with capacity, owner, reference/release contract and optional copy/transfer semantics. Pointer sharing is not automatically portable zero-copy.
-- **MediaCapabilities / negotiation:** compatible format selection across **both** ports and their link. If a transform is needed, represent an explicit optional node rather than hidden conversion in the router.
-- **Control / lifecycle:** create, publish, connect, subscribe, renegotiate, disconnect, cancel, error, recovery and end-of-stream; control-plane messages and payload delivery have separate contracts.
-
-### Policies versus mechanisms
-
-The fabric provides routing, subscriptions, lifecycle and bounded flow-control mechanisms. Applications/adapters choose policies: live-preview frame drop versus loss-intolerant recording, queue limits, reconnect strategy, preferred codecs, and whether to permit format conversion. Discovery (including optional DNS-SD) supplies candidates but must not be required for routing or static configuration.
-
-### AROS-specific architectural decisions still open
-
-1. **Execution and deployment:** compare library-only, Exec service and hybrid models; a library API alone does not imply cross-process shared state, and a mandatory resident daemon is not justified yet.
-2. **Ownership and memory:** establish how tasks exchange buffer references, allocation constraints for m68k and other targets, optional copy paths, DMA/cache restrictions and lifetime on cancellation.
-3. **Clock model:** define monotonic/timebase conversion, track alignment, timestamp discontinuities and wraparound without mandating a global real-time scheduler.
-4. **Capability and graph lifecycle:** define who authorizes links, handles renegotiation and recovers from endpoint loss; avoid global locks held across blocking I/O.
-5. **Module boundaries:** keep transport, codecs, demux/mux, devices and optional discovery independent of the minimal core; respect target-specific build footprints.
-6. **Security and trust:** local-versus-remote endpoint permissions, network authentication and resource exhaustion limits belong at explicit boundaries, not in an implicit trusted graph.
-
-### Scope and architectural acceptance criteria
-
-A coherent design must represent: (a) network-to-network compressed passthrough without mandatory decode/re-encode; (b) one producer and multiple consumers with independent flow policy; (c) an application consuming and republishing a transformed stream; (d) a session with independently timed audio and video tracks; and (e) local-only operation without network or a mandatory daemon. These are **design scenarios**, not an implementation or testing schedule.
-
-**Do not prematurely freeze:** public ABI, service placement, wire protocol, scheduling model, allocator, codec, VHI integration details, or a mandatory process topology. First reconcile the conceptual contracts with actual AROS library/device/resource/task conventions. Keep original code provenance and review licenses before reusing third-party implementation code.
+The previous proof-of-concept gates in [roadmap.md](roadmap.md) and validation-oriented guidance in [media-pipeline.md](media-pipeline.md) are historical research plans; they do not override this architecture-first direction.
