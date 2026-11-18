@@ -74,3 +74,73 @@ See [research](research.md) for upstream evidence and [roadmap](roadmap.md) for 
 ## Composable media pipeline
 
 The source/frame/sink sketch is a high-level view, not a requirement for monolithic adapters. Separate source acquisition, demuxing, decoding, pixel conversion, processing, encoding, muxing, transport, and output. Keep each optional and negotiate capabilities before connecting modules. Where source and destination formats permit, compressed packet passthrough should avoid decode/re-encode. A media editor or timeline system may orchestrate seeks and clip ranges but should not become part of the core. See [media-pipeline.md](media-pipeline.md).
+
+## Architecture review against reference projects (November 2026)
+
+**Status: candidate logical architecture; not an ABI, daemon, build plan or runtime validation.** This review corrects an earlier device-first / proof-of-concept emphasis. The goal at this stage is to design a generic AROS audiovisual I/O architecture. Network, files, applications, VHI and AHI are interchangeable adapter domains, not architectural centers.
+
+### Reference comparison
+
+| Reference | Architectural lesson | Gap in the previous Endpoint / Stream Fabric / AROS Services model |
+| --- | --- | --- |
+| [MediaMTX](https://github.com/bluenviron/mediamtx) | Published streams, multiple readers, media tracks, protocol adapters and bounded distribution | Stream naming, tracks and publication lifecycle were underspecified; do not turn the network server into a mandatory core |
+| [GPAC](https://github.com/gpac/gpac) | Filters with input/output connections, packet metadata, capability matching, composable transforms | Connections, packet-versus-frame semantics and optional transform nodes were missing |
+| [libobs](https://github.com/obsproject/obs-studio) | Separation of sources, outputs and encoders; asynchronous media and timestamps | Bidirectional application integration and async delivery contracts were unclear; composition/scenes remain outside scope |
+| [LIVE555](https://www.live555.com/liveMedia/) | Session/subsession, transport-specific timing and lifecycle | Presentation/session and track semantics were not modeled explicitly; avoid coupling the core to RTP/RTSP |
+| [PipeWire](https://github.com/PipeWire/pipewire) | Nodes, ports, links, capabilities and buffer exchange | Endpoint conflated an entity with its connections; shared-buffer negotiation and graph topology were underspecified |
+
+This is an architectural comparison, not a claim that the reference implementations can be embedded in AROS or share compatible licenses.
+
+### Revised logical architecture
+
+```text
+ Network adapters       Application adapters       File / device adapters
+          \                    |                       /
+                Media Nodes and typed I/O Ports
+                              |
+                  Media Graph / Stream Fabric
+              Links, routing, publication, subscription
+                         /           \
+               Media Model          Buffer Model
+         sessions/tracks/formats   ownership/queues/flow
+                 clocks/timing     lifetime/copy boundaries
+                         \           /
+                    Control and Lifecycle
+           discovery hooks, negotiation, state, recovery
+                              |
+                    AROS Platform Integration
+            Exec tasks/ports/memory; AROSTCP as adapter
+```
+
+These are **logical responsibilities**, not necessarily separate libraries, processes, threads, services or allocation domains. The graph is a *connectivity model*, not an obligatory GPAC-like processing scheduler. Local links must not be forced through a network server.
+
+### Conceptual contracts (names provisional)
+
+- **MediaNode:** a source, sink or optional transformer; a transformer is a node with both input and output ports. The core routes media but does not implement effects, compositing, codecs or editing.
+- **MediaPort:** a typed input/output interface with capabilities, accepted media representations and lifecycle.
+- **MediaLink:** a negotiated connection between compatible ports, distinct from the stream being carried. Support fan-out and independent consumer policies.
+- **MediaStream:** publishable identity and continuity of media; not synonymous with a socket or link.
+- **MediaSession / MediaTrack:** presentation-level grouping and independently timed video/audio/other tracks; define synchronization relationships without assuming all tracks share one clock.
+- **MediaUnit:** either an encoded packet or a raw frame, with explicit representation, timestamp domain, duration, sequence/discontinuity and format/configuration changes. Do not silently treat RTP packets, codec access units and decoded frames as interchangeable.
+- **MediaBuffer:** payload storage, immutable while shared, with capacity, owner, reference/release contract and optional copy/transfer semantics. Pointer sharing is not automatically portable zero-copy.
+- **MediaCapabilities / negotiation:** compatible format selection across **both** ports and their link. If a transform is needed, represent an explicit optional node rather than hidden conversion in the router.
+- **Control / lifecycle:** create, publish, connect, subscribe, renegotiate, disconnect, cancel, error, recovery and end-of-stream; control-plane messages and payload delivery have separate contracts.
+
+### Policies versus mechanisms
+
+The fabric provides routing, subscriptions, lifecycle and bounded flow-control mechanisms. Applications/adapters choose policies: live-preview frame drop versus loss-intolerant recording, queue limits, reconnect strategy, preferred codecs, and whether to permit format conversion. Discovery (including optional DNS-SD) supplies candidates but must not be required for routing or static configuration.
+
+### AROS-specific architectural decisions still open
+
+1. **Execution and deployment:** compare library-only, Exec service and hybrid models; a library API alone does not imply cross-process shared state, and a mandatory resident daemon is not justified yet.
+2. **Ownership and memory:** establish how tasks exchange buffer references, allocation constraints for m68k and other targets, optional copy paths, DMA/cache restrictions and lifetime on cancellation.
+3. **Clock model:** define monotonic/timebase conversion, track alignment, timestamp discontinuities and wraparound without mandating a global real-time scheduler.
+4. **Capability and graph lifecycle:** define who authorizes links, handles renegotiation and recovers from endpoint loss; avoid global locks held across blocking I/O.
+5. **Module boundaries:** keep transport, codecs, demux/mux, devices and optional discovery independent of the minimal core; respect target-specific build footprints.
+6. **Security and trust:** local-versus-remote endpoint permissions, network authentication and resource exhaustion limits belong at explicit boundaries, not in an implicit trusted graph.
+
+### Scope and architectural acceptance criteria
+
+A coherent design must represent: (a) network-to-network compressed passthrough without mandatory decode/re-encode; (b) one producer and multiple consumers with independent flow policy; (c) an application consuming and republishing a transformed stream; (d) a session with independently timed audio and video tracks; and (e) local-only operation without network or a mandatory daemon. These are **design scenarios**, not an implementation or testing schedule.
+
+**Do not prematurely freeze:** public ABI, service placement, wire protocol, scheduling model, allocator, codec, VHI integration details, or a mandatory process topology. First reconcile the conceptual contracts with actual AROS library/device/resource/task conventions. Keep original code provenance and review licenses before reusing third-party implementation code.
