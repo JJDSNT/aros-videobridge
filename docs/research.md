@@ -101,6 +101,22 @@ The following is a **repository-level orientation**, not a license audit of indi
 
 **Open validation:** inspect upstream buffer/refcount and scheduling behavior in depth; measure AROS m68k frame/packet memory, copy counts and throughput; prove an actual AROS publisher-to-MediaMTX-to-OBS path; and check protocol/codec availability per target before selecting a first adapter.
 
+## AROS-native control and capture contract audit (November 2026)
+
+**Source inspection, not runtime validation.** This is a narrow feasibility audit of current upstream headers and the USB class implementation, not proof that a complete VHI driver or VideoBridge implementation is available.
+
+- [Exec message ports](https://github.com/aros-development-team/AROS/blob/master/compiler/include/exec/ports.h): `MsgPort` provides a message list, signal target and signal bit; `Message` has a reply port and **16-bit `mn_Length`**. Use messages for bounded control descriptors and notifications, not inline raw video frames. The size field alone does not establish payload ownership or cross-address-space pointer validity.
+- [Exec memory flags](https://github.com/aros-development-team/AROS/blob/master/compiler/include/exec/memory.h): includes `MEMF_PUBLIC`, `MEMF_FAST`, `MEMF_CHIP`, `MEMF_LOCAL` and others. Their presence is not a promise of universal DMA suitability, cross-task zero-copy or portable sharing; investigate target-specific allocation and cache behavior.
+- [Exec semaphores](https://github.com/aros-development-team/AROS/blob/master/compiler/include/exec/semaphores.h): `SignalSemaphore` and wait queues are available. Do not hold a global stream lock while waiting for device capture, codecs, or a slow consumer.
+- [VHI contract](https://github.com/aros-development-team/AROS/blob/master/compiler/include/vhi/vhi.h): `vhi_digitize` has optional `CstAllocVec`/`CstFreeVec` callbacks when `custom_memhandling` is set. This is a possible integration hook, **not** evidence that a particular VHI driver honors it or that it exposes a live-stream push interface.
+- [UVC class capture contract](https://github.com/aros-development-team/AROS/blob/master/compiler/include/devices/uvc_capture.h): `UVCM_GRAB` takes an explicit RGB24 destination buffer and capacity; `UVCM_MODEINFO` and `UVCM_RATES` expose modes and capture intervals; `UVCM_GRABMODE`/`GRABRATE` select modes per grab. Calls return zero on multiple failure conditions. These public contracts support a copy-based baseline and bounded destination allocations, **not** zero-copy claims.
+- [UVC class implementation](https://github.com/aros-development-team/AROS/blob/master/rom/usb/classes/video/uvc.class.c): `uvc_method()` recognizes `UVCM_GRAB`, `UVCM_GRABMODE` and `UVCM_GRABRATE`, snapshots a selected camera under `nh_Lock`, releases the class lock before acquiring the device lock, and revalidates the binding. Camera IDs are generations; unplug and rebinding require explicit handling. The class is a lower-level capture implementation, not itself a proven generic VHI streaming service.
+- [VHI library directory](https://github.com/aros-development-team/AROS/tree/master/workbench/libs/vhi): the inspected directory contains `vhi.conf` and `mmakefile.src`; it did **not** expose a `uvc` implementation at the guessed paths. Locate the actual VHI/UVC bridge elsewhere in the tree or contrib before making a claim about its callbacks, lifecycle or frame ownership.
+
+**Proposed first experiment:** a private, single-address-space synthetic publisher with two readers, a fixed-size buffer pool and fixed byte budgets. Use Exec messages for control only. Track every buffer's owner, generation and release; measure peak allocated bytes and slow-reader drops. Then test the actual VHI/UVC adapter and add network publication only after validating memory/capture behavior. Do not freeze a public ABI or introduce a mandatory daemon based on these findings.
+
+**Still unverified:** actual VHI/UVC bridge location and semantics, AHI audio synchronization, cross-task memory visibility on each target, buffer cache/DMA rules, and m68k runtime performance.
+
 ## Open questions requiring code and runtime evidence
 
 1. Which actual VHI driver in AROS consumes UVC methods, and how are its buffers owned and released?
