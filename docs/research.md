@@ -76,6 +76,20 @@ These projects are **architectural references**, not dependencies, porting commi
 - **Relevant idea:** connecting device and application endpoints, media format negotiation, and coordinating buffers between independent participants.
 - **Boundary:** its Linux-centric process integration and supporting infrastructure should not become prerequisites for an AROS implementation.
 
+### Licensing and code-reuse assessment
+
+The following is a **repository-level orientation**, not a license audit of individual files, dependencies or releases. Using published architectural ideas is distinct from copying or adapting protected implementation code. Any proposed code reuse must be checked against the exact upstream file, version, notices and dependency licenses.
+
+| Reference | License evidence | Implication for VideoBridge |
+| --- | --- | --- |
+| [MediaMTX](https://github.com/bluenviron/mediamtx) | [MIT license](https://github.com/bluenviron/mediamtx/blob/main/LICENSE) | Permissive reuse with required notices; the Go implementation remains a separate portability concern. |
+| [GPAC](https://github.com/gpac/gpac) | [LGPL 2.1 COPYING](https://github.com/gpac/gpac/blob/master/COPYING) | Library reuse may be possible, subject to LGPL conditions, including replacement/relinking requirements where applicable; static linking needs particular review. |
+| [OBS Studio / libobs](https://github.com/obsproject/obs-studio) | [GPL 2.0 COPYING](https://github.com/obsproject/obs-studio/blob/master/COPYING) | Treat direct libobs code reuse as strong-copyleft-sensitive; check per-file notices and any later-version grants. Protocol interoperability does not require embedding libobs. |
+| [LIVE555](http://www.live555.com/liveMedia/) | [Third-party mirror](https://github.com/rgaufman/live555) reports LGPL-3.0 in repository metadata but also contains a [GPL-3.0 COPYING file](https://github.com/rgaufman/live555/blob/master/COPYING). The mirror explicitly directs users to the [official distribution](http://www.live555.com/liveMedia/). | **License requires verification against the exact official release and component**; do not assume the mirror's aggregate metadata governs all files. |
+| [PipeWire](https://github.com/PipeWire/pipewire) | [MIT-style root COPYING](https://github.com/PipeWire/pipewire/blob/master/COPYING); repository metadata does not assign one SPDX license to the whole tree. | Favorable for MIT-covered code, but check each component, plugin and dependency before reuse. |
+
+**Practical policy:** keep all five as attributed architectural references; consider code adaptation only after a per-file license and dependency review. Preserve original authorship and notices. Do not imply that studying GPAC, libobs or LIVE555 requires changing VideoBridge's own license, and do not choose VideoBridge's eventual license based solely on these references.
+
 ### VideoBridge design implications (proposals, not settled ABI)
 
 1. Keep a **small transport-agnostic core** for stream identity, endpoint registration, subscriptions, media format descriptors, lifecycle and bounded delivery.
