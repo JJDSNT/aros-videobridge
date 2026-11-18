@@ -1,63 +1,124 @@
-# Evidence-driven roadmap
+# Architecture-first roadmap
 
-No code or AROS ABI change is authorized by this roadmap alone. Each gate ends with measured evidence and an explicit decision.
+> **Current phase: architectural design, not implementation or proof of concept.** This roadmap supersedes the earlier VHI/UVC-first experimental gates. No code, AROS ABI, task model, transport protocol or prototype is authorized by this document.
 
-## Gate 0 — Baseline and feasibility
+## North star: heterogeneous input, application-owned processing, independent output
 
-- Locate the actual UVC-backed VHI driver implementation and trace `OPEN -> GET/SET -> DIGITIZE -> CLOSE`.
-- Record driver buffer ownership, blocking semantics, frame formats, concurrency, unplug and cancellation behavior.
-- Determine FFmpeg 8.1.2 build status per AROS target; enumerate actual enabled demuxers, protocols, decoders, encoders and dependencies.
-- Establish a reproducible AROS build/test environment and baseline memory/CPU measurements.
-- Identify one existing VHI client (e.g. cAMIra) and one OBS ingestion mechanism.
+The [reference scenario](reference-scenario-video-toaster-obs.md) is:
 
-**Exit:** a verified dependency matrix and a minimal end-to-end diagram, with unsupported assumptions removed.
+```text
+Network stream -- [network adapter] --+
+                                       |
+Local file ----- [file adapter] -------+--> AROS Video Toaster --> Program
+                                       |                           |
+Capture device - [capture adapter] ----+                  [output adapter]
+                                                                   |
+                                                               OBS Studio
+```
 
-## Gate 1 — Virtual VHI source, no network
+Optional decoding, conversion, encoding, packetization and other processing are **explicit replaceable nodes**, never mandatory functions of the core. The Video Toaster owns switching and composition. OBS is a reference consumer, not a core dependency. Audio tracks are included in the model even when a particular scenario uses video only.
 
-- Implement a minimal experimental VHI-compatible source fed by synthetic frames or a bounded local queue.
-- Keep public `vhi.h` and `vhi.conf` unchanged.
-- Exercise it from an existing VHI client without client modifications.
-- Test frame ownership, source closure, repeated open/close, and low-memory failure.
+A proposed architecture is inadequate if it can express this scenario only by embedding network/file/capture-specific behavior in the Video Toaster or by mandating a central server.
 
-**Exit:** a reproducible VHI client displaying generated frames with no leaks or unbounded queue growth.
+## Decision A — Minimal architectural kernel
 
-## Gate 2 — Network/file ingestion
+**Question:** What must every independent audiovisual component understand to connect to another?
 
-- Choose the smallest working decoder/protocol based on Gate 0, not on protocol popularity.
-- Run blocking network/file I/O outside the consumer's rendering path.
-- Implement bounded buffering, reconnect, timeout, format change and end-of-stream policies.
-- Measure latency, frame drops, memory high-water mark and CPU.
+- Stabilize conceptual responsibilities for **nodes, typed ports, links, media representation and capabilities**.
+- Distinguish stream/track identity from links and physical transport.
+- Determine which concepts are essential for a trivial local camera-to-preview path and which are optional for richer scenarios.
+- Separate architectural contracts from adapter capabilities, graph planners and processing engines.
+- Avoid promoting `GraphContext`, `Session` or any other conceptual term into mandatory runtime objects without a clear reason.
 
-**Exit:** a real stream/file appears to an unmodified VHI client; failures recover or terminate predictably.
+**Exit:** a small, internally consistent vocabulary and a core-versus-extension responsibility matrix.
 
-## Gate 3 — OBS interoperability as output
+## Decision B — Connection and capability negotiation
 
-- Export frames from a test producer or video consumer through a separate sink.
-- First validate a supported OBS-ingest path; avoid requiring an OBS plugin unless necessary.
-- Keep encoder/network backpressure isolated from capture and rendering.
-- Verify frame order, timestamp behavior, disconnect/reconnect, and shutdown.
+**Question:** What makes two ports compatible?
 
-**Exit:** OBS receives a sustained AROS-produced video feed; performance and limitations are documented.
+- Specify compatibility semantics for raw video, encoded video, raw audio, encoded audio and extensible media.
+- Keep packetization, codec access units and decoded frames distinct.
+- Express relevant format, timing and delivery constraints without imposing a universal format.
+- Prefer direct compatible links; incompatible ports must report a reason.
+- Permit explicitly chosen optional converter/decoder/encoder nodes, but **do not require** automatic graph planning or hidden conversion.
 
-## Gate 4 — Video Toaster integration
+**Exit:** a conceptual connection contract that covers direct passthrough, incompatible formats, and explicitly composed conversion paths.
 
-- Define the minimal consumer-facing source contract needed by the intended AROS Video Toaster path.
-- Validate multi-input switching, frame/field timing, scaling and format conversion.
-- Add audio only with an explicit clock/synchronization plan.
-- Assess whether Copperline/NT-Toaster code reuse is warranted and license-compatible; do not assume the emulator is the video I/O framework.
+Reference: [connection model](connection-model.md).
 
-**Exit:** an AROS-side demonstration switching between at least a VHI camera/synthetic source and a network/file source, with Program output observable locally and externally.
+## Decision C — Application-facing input/output contracts
 
-## Cross-cutting requirements
+**Question:** How can the Toaster receive three unrelated inputs and publish Program without knowing their adapters?
 
-- **Compatibility:** no breaking changes to legacy VHI ABI or consumers.
-- **Portability:** no mandatory Windows, Qt, OBS, NDI or GPU dependencies.
-- **Modularity:** optional components and target-specific feature profiles.
-- **Memory:** bounded queues; explicit per-frame capacity and ownership; measured peak usage on m68k.
-- **Timing:** monotonic timestamps, explicit conversion, defined drop/duplicate behavior.
-- **Robustness:** cancellation, reconnect, source removal and cleanup are tested.
-- **Scope:** do not modify AROSTCP or upstream components without a reproducible requirement.
+- Describe how applications expose accepted input ports and offered output ports.
+- Keep application-specific behavior (switching, effects, composition, editing, recording policy) outside VideoBridge.
+- Treat a Program output as publishable media independent of its downstream consumer.
+- Define how one Program can serve OBS, local preview and recording, with independent destination policies.
+- Clarify the relationship among source identity, stream continuity and application-owned Program identity.
 
-## Suggested first engineering deliverable
+**Exit:** an application contract and diagrams for the three-input/OBS scenario and its multi-output extension.
 
-A short `docs/feasibility-report.md` with direct source links, exact file/function references, build outputs, a target/protocol matrix and a recommended smallest proof of concept. Update architecture only after those findings are confirmed.
+## Decision D — Media timing, continuity and change
+
+**Question:** What media semantics survive changes in source, representation or connection?
+
+- Define track-level timing and declared clock domains, including independently timed audio/video.
+- Distinguish source interruption, link interruption, format change and stream replacement.
+- State what information a consumer needs to react to discontinuity or renegotiation.
+- Avoid assuming that VideoBridge itself performs synchronization, buffering, resampling or frame-rate conversion.
+
+**Exit:** a semantic model for identity, timing and reconfiguration, not an Exec cancellation state machine.
+
+## Decision E — Distribution, placement and extensibility
+
+**Question:** How does the same architecture serve local applications and optional network publication?
+
+- Keep local links first-class, with no required daemon, central registry or scheduler.
+- Separate control/discovery from media exchange; discovery remains optional.
+- Make fan-out and independent consumer policies expressible without forcing one queueing implementation.
+- Place VHI/UVC, AHI, file I/O, AROSTCP/protocols, OBS interoperability and codecs behind replaceable boundaries.
+- Preserve low-footprint m68k viability by requiring no unused adapter or heavyweight media engine in the minimal design.
+
+**Exit:** a deployment-neutral conceptual architecture and clear extension boundaries.
+
+## Architecture review: apply the same questions to every proposal
+
+| Reference case | Essential property |
+| --- | --- |
+| Capture → preview | Local direct connection, no network or codec dependency |
+| Encoded camera → recorder | Compatible encoded passthrough |
+| Encoded source → raw-only sink | Explicit incompatibility or optional decoder |
+| Stream + file + capture → Video Toaster → OBS | Heterogeneous inputs and independent Program publication |
+| Program → OBS + preview + recorder | Fan-out with independent destination expectations |
+| Audio + video tracks | Declared timing relationships, no mandatory mixer/sync engine |
+| Source reconnects or changes format | Identity and continuity semantics remain clear |
+
+## Design principles for the agent
+
+1. **Architecture before implementation.** Resolve conceptual responsibilities and their boundaries first.
+2. **Interoperability is the goal, not feature accumulation.** VideoBridge is more than a router because components share media and connection contracts, not because the core performs more processing.
+3. **No privileged source type.** File, network, capture and application media are peers.
+4. **No hidden work.** No implicit decoding, transcoding, compositing or format conversion.
+5. **No mandatory infrastructure.** A local-only path must not require network, daemon, central scheduler or discovery.
+6. **No premature ABI decisions.** Exec tasks, MsgPorts, libraries, devices, resources, buffers and synchronization are later engineering decisions.
+7. **Preserve AROS/m68k viability.** The minimal architecture should not require desktop-class runtime components.
+8. **Preserve provenance.** Existing research and source attributions remain valid; reuse of code requires separate license review.
+
+## Existing research: informative, not a gate sequence
+
+- [Architecture](architecture.md): mission, responsibilities and invariants.
+- [Connection model](connection-model.md): compatibility and composition semantics.
+- [Video Toaster → OBS reference scenario](reference-scenario-video-toaster-obs.md): end-to-end architectural example.
+- [Media pipeline research](media-pipeline.md): codecs, demux, formats, buffers and platform considerations.
+- [Streaming protocols](streaming-protocols.md): candidate network adapters, not a mandatory protocol choice.
+- [Research references](research.md): upstream evidence and provenance.
+
+The previous feasibility/prototype plan (virtual VHI, file/network ingest, OBS demo, Video Toaster integration) may inform a **later implementation plan** once these decisions are stable. It is not the current roadmap.
+
+## Next documentation deliverables
+
+- A concise **core-versus-extensions responsibility matrix** (Decision A).
+- A **port compatibility and negotiation contract** illustrated by direct and converted paths (Decision B).
+- An **application-facing Program/input contract** using the three-input Toaster scenario (Decision C).
+
+No proof of concept or implementation milestone is required to complete these deliverables.
