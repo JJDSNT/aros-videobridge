@@ -9,15 +9,19 @@ The [reference scenario](reference-scenario-video-toaster-obs.md) is:
 ```text
 Network stream -- [network adapter] --+
                                        |
-Local file ----- [file adapter] -------+--> AROS Video Toaster --> Program
-                                       |                           |
-Capture device - [capture adapter] ----+                +----------+----------+
-                                                        [streaming adapter]  [file writer/muxer]
-                                                                 |                   |
-                                                             OBS Studio          Recorded file
+Local file ----- [file adapter] -------+--> [VideoBridge: acquisition]
+                                       |               |
+Capture device - [capture adapter] ----+       [AROS Video Toaster]
+                                                switch / Program
+                                                      |
+                                         [VideoBridge: distribution]
+                                                /             \
+                                      [stream adapter]   [file writer/muxer]
+                                              |                 |
+                                          OBS Studio        Recorded file
 ```
 
-Optional decoding, conversion, encoding, packetization and other processing are **explicit replaceable nodes**, never mandatory functions of the core. The Video Toaster owns switching and composition. OBS streaming and file recording are **simultaneous required destinations in this reference scenario**, not core dependencies. Audio tracks are included in the model even when a particular scenario uses video only.
+Acquisition and distribution are **two roles of the same VideoBridge architecture**, not necessarily distinct services or libraries. Optional decoding, conversion, encoding, packetization and other processing are **explicit replaceable nodes**, never mandatory functions of the core. The Video Toaster owns switching and composition. OBS streaming and file recording are **simultaneous required destinations in this reference scenario**, not core dependencies. Audio tracks are included in the model even when a particular scenario uses video only.
 
 A proposed architecture is inadequate if it can express this scenario only by embedding network/file/capture-specific behavior in the Video Toaster or by mandating a central server.
 
@@ -51,7 +55,7 @@ Reference: [connection model](connection-model.md).
 
 **Question:** How can the Toaster receive three unrelated inputs and publish Program to OBS and a recorded file without knowing their adapters?
 
-- Describe how applications expose accepted input ports and offered output ports.
+- Describe how applications expose accepted input ports and offered output ports, both connected through VideoBridge contracts.
 - Keep application-specific behavior (switching, effects, composition, editing, recording policy) outside VideoBridge.
 - Treat a Program output as publishable media independent of its downstream consumer.
 - Define how one Program simultaneously serves OBS streaming and file recording, with independent destination policies; local preview is an optional third output.
